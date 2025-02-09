@@ -1,0 +1,43 @@
+name: Deploy to Kubernetes
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+jobs:
+  deploy:
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.title, 'Changes')
+    name: Apply Modified Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set Up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: latest  # Ensures latest kubectl version
+
+      - name: Authenticate with Kubernetes
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" > kubeconfig
+          export KUBECONFIG=kubeconfig
+
+      - name: Find Modified Manifest Files
+        id: changed-files
+        run: |
+          git fetch origin main
+          MODIFIED_FILES=$(git diff --name-only origin/main HEAD -- 'k8s-manifests/*.yaml')
+          echo "modified_files=$MODIFIED_FILES" >> $GITHUB_ENV
+
+      - name: Apply Only Modified Manifests
+        if: env.modified_files != ''
+        run: |
+          for FILE in ${{ env.modified_files }}; do
+            echo "Applying $FILE"
+            kubectl apply -f $FILE
+          done
